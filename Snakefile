@@ -62,8 +62,16 @@ ncbi_id_map = {
 
 
 def gen_ensem_id_map():
+    '''
+    Generates and Ensemble chromosome ID map. The chromosome
+    names in ensemble are just numbers, this function prepends
+    a 'chr' to the name and fixes the names for chrMt and chrX.
+    '''
     ensem_map = {}
     def inc_range(start, end):
+        '''
+        inclusive range
+        '''
         return range(start, end+1)
                             
     for i in inc_range(1,31):
@@ -78,8 +86,6 @@ ensem_id_map = gen_ensem_id_map()
 #refseq - GCF v genbank - GCA
 NCBI_ASSEM = config['NCBI']['ASSEMBLY']
 ENSEMBL_ASSEM = config['ENSEMBL']['ASSEMBLY']
-
-
 
 
 # ----------------------------------------------------------
