@@ -1,3 +1,4 @@
+BUCKET: 'HorseGeneAnnotation'
 THREADS:
     STAR: 30
 NCBI:
