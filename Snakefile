@@ -1,33 +1,12 @@
-import gzip
-import bz2
-import lzma
 import os 
 
+from src import utils
 
 #------------------------------------------------------------------------------
 #                "Labs grow great when old farts create workflows               
 #                 whose ease they know they shall never enjoy."                 
 #                                                           -Rob
 #------------------------------------------------------------------------------
-
-
-class RawFile(object):
-    def __init__(self,filename):
-        self.filename = filename
-        if filename.endswith('.gz'):
-            self.handle = gzip.open(filename,'rt')
-        elif filename.endswith('bz2'):
-            self.handle = bz2.open(filename,'rt')
-        elif filename.endswith('xz'):
-            self.handle = lzma.open(filenaem,'rt')
-        else:
-            self.handle = open(filename,'r')
-    def __enter__(self):
-        return self.handle
-    def __exit__(self,dtype,value,traceback):
-        self.handle.close()
-
-
 
 from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
 FTP = FTPRemoteProvider()
@@ -42,9 +21,7 @@ S3 = S3RemoteProvider(
     secret_access_key=s3_access_key
 )
 
-
 configfile: "config.yaml"
-
 
 ncbi_id_map = {
     'NC_009144.3':'chr1',  'NC_009145.3':'chr2',  'NC_009146.3':'chr3',
@@ -60,33 +37,12 @@ ncbi_id_map = {
     'NC_009174.3':'chr31', 'NC_009175.3':'chrX',  'NC_001640.1':'chrMt'
 }
 
+ensem_id_map = utils.gen_ensem_id_map()
 
-def gen_ensem_id_map():
-    '''
-    Generates and Ensemble chromosome ID map. The chromosome
-    names in ensemble are just numbers, this function prepends
-    a 'chr' to the name and fixes the names for chrMt and chrX.
-    '''
-    ensem_map = {}
-    def inc_range(start, end):
-        '''
-        inclusive range
-        '''
-        return range(start, end+1)
-                            
-    for i in inc_range(1,31):
-        ensem_map[str(i)] = 'chr' + str(i)
-        if 'MT' or 'X' not in ensem_map:
-            ensem_map['MT'] = 'chrMt'
-            ensem_map['X'] = 'chrX'
-    return ensem_map   
-
-ensem_id_map = gen_ensem_id_map()
-
-#refseq - GCF v genbank - GCA
+# refseq - GCF v genbank - GCA
 NCBI_ASSEM = config['NCBI']['ASSEMBLY']
 ENSEMBL_ASSEM = config['ENSEMBL']['ASSEMBLY']
-
+BUCKET = config['BUCKET']
 
 # ----------------------------------------------------------
 #       Make "nice" FASTAs
@@ -96,9 +52,9 @@ rule nice_ncbi_fasta:
     input:
         fna = FTP.remote(f'{config["NCBI"]["FASTA"]}')
     output:
-        fna = S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz')
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True)
     run:
-        with RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
+        with utils.RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
             for line in IN:
                 if line.startswith('>'):
                     name, *fields = line.lstrip('>').split()
@@ -112,9 +68,9 @@ rule nice_ensembl_fasta:
     input:
         fna = FTP.remote(f'{config["ENSEMBL"]["FASTA"]}')
     output:
-        fna = S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
     run:
-        with RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
+        with utils.RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
             for line in IN:
                 if line.startswith('>'):
                     name, *fields = line.lstrip('>').split()
@@ -132,9 +88,9 @@ rule nice_ncbi_gff:
     input:
         gff = FTP.remote(f'{config["NCBI"]["GFF"]}')
     output:
-        gff = S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
     run:
-        with RawFile(input.gff) as IN, \
+        with utils.RawFile(input.gff) as IN, \
             open(output.gff,'w') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
@@ -147,9 +103,9 @@ rule nice_ensembl_gff:
     input:
         gff = FTP.remote(f'{config["ENSEMBL"]["GFF"]}')
     output:
-        gff = S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz')
     run:
-        with RawFile(input.gff) as IN, \
+        with utils.RawFile(input.gff) as IN, \
             open(output.gff,'w') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
@@ -164,64 +120,66 @@ rule nice_ensembl_gff:
 
 rule build_star_ncbi:
     input:
-        gff = S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz'),
-        fna = S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz'),
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz')
     output:
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/Genome'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/SA'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/SAindex'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrLength.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrName.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrNameLength.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrStart.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/exonGeTrInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/exonInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/geneInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/genomeParameters.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbInfo.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbList.fromGTF.out.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbList.out.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/transcriptInfo.tab')
-    threads: f'{int(config["THREADS"]["STAR"])}'
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/Genome'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/SA'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/SAindex'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrLength.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrName.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrNameLength.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrStart.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/exonGeTrInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/exonInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/geneInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/genomeParameters.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbInfo.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbList.fromGTF.out.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbList.out.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/transcriptInfo.tab')
+    threads: int(f'{int(config["THREADS"]["STAR"])}')
     shell:
-        '''STAR \
-          --runThreadN {threads} \
+        f'''
+          STAR \
+          --runThreadN {{threads}} \
           --runMode genomeGenerate \
-          --genomeDir HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/ \
-          --genomeFastaFiles {input.fna} \
-          --sjdbGTFfile {input.gff} \
+          --genomeDir {BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/ \
+          --genomeFastaFiles {{input.fna}} \
+          --sjdbGTFfile {{input.gff}} \
           --sjdbGTFtagExonParentTranscript Parent
         '''
 
 
 rule build_star_ensembl:
     input:
-        gff = S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz'),
-        fna = S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz'),
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
     output:
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/Genome'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/SA'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/SAindex'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrLength.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrName.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrNameLength.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrStart.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/exonGeTrInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/exonInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/geneInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/genomeParameters.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbInfo.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbList.fromGTF.out.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbList.out.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/transcriptInfo.tab') 
-    threads: f'{int(config["THREADS"]["STAR"])}'
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/Genome'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/SA'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/SAindex'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrLength.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrName.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrNameLength.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrStart.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/exonGeTrInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/exonInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/geneInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/genomeParameters.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbInfo.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbList.fromGTF.out.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbList.out.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/transcriptInfo.tab') 
+    threads: int(f'{int(config["THREADS"]["STAR"])}')
     shell:
-        '''STAR \
-          --runThreadN {threads} \
+        f'''
+          STAR \
+          --runThreadN {{threads}} \
           --runMode genomeGenerate \
-          --genomeDir HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/ \
-          --genomeFastaFiles {input.fna} \
-          --sjdbGTFfile {input.gff} \
+          --genomeDir {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/ \
+          --genomeFastaFiles {{input.fna}} \
+          --sjdbGTFfile {{input.gff}} \
           --sjdbGTFtagExonParentTranscript Parent 
         '''
 
