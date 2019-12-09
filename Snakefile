@@ -1,12 +1,15 @@
 import os 
-
-from src import utils
+import gzip
+import minus80 as m80
 
 #------------------------------------------------------------------------------
 #                "Labs grow great when old farts create workflows               
 #                 whose ease they know they shall never enjoy."                 
 #                                                           -Rob
 #------------------------------------------------------------------------------
+
+from src import utils
+from pathlib import Path
 
 from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
 FTP = FTPRemoteProvider()
@@ -45,6 +48,63 @@ ENSEMBL_ASSEM = config['ENSEMBL']['ASSEMBLY']
 BUCKET = config['BUCKET']
 
 # ----------------------------------------------------------
+#       Make the LocusPocus Databases for the GFF/Fasta
+# ----------------------------------------------------------
+
+rule make_transcriptomic_fna:
+    input:
+        fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ncbiEquCab3/thawed/tinydb.json',
+        gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ncbiEquCab3/thawed/tinydb.json'
+    output:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna.gz',keep_local=True)
+    run:
+        import locuspocus as lp
+        # Load the GFF and FNA dbs
+        fna = lp.Fasta('ncbiEquCab3') 
+        gff = lp.Loci('ncbiEquCab3')
+        with open(output.fna,'w') as OUT:
+            gff.set_primary_feature_type('gene')
+            for gene in genes:
+                longest = None
+                max_length = 0
+                # calulcate the length of each mRNA
+                for feature in gene.subloci:
+                    # skip non mRNA features
+                    if feature.feature_type != 'mRNA':
+                        continue
+                    # calculate the total length of all the exons that make up the mRNA
+                    exon_length = sum([len(x) for x in feature.subloci if x.feature_type == 'exon']) 
+                    # Store info it its the longest
+                    if exon_length > max_length:
+                        longest = feature
+                        max_length = exon_length
+                if longest is None:
+                    continue
+                # Print out the nucleotides for the longest mRNA
+                print(f">{gene.name}|{feature.name}",file=OUT)
+                exon_seq = ''.join([fna[x.chromosome][x.start:x.end] for x in longest.subloci if x.feature_type == 'exon'])
+                for chunk in [exon_seq[i:i+n] for i in range(0,len(exon_seq),90)]:
+                    print(chunk,file=OUT)
+                
+                
+
+rule make_locpoc_dbs:
+    input:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True),
+        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
+    output:
+        fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ncbiEquCab3/thawed/tinydb.json',
+        gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ncbiEquCab3/thawed/tinydb.json'
+    run:
+        # Create the loci db
+        import locuspocus as lp
+        fna = lp.Fasta.from_file('ncbiEquCab3', input.fna)  
+        # Create the GFF db
+        gff = lp.Loci('ncbiEquCab3')
+        gff.import_gff(input.gff)
+        
+
+# ----------------------------------------------------------
 #       Make "nice" FASTAs
 # ----------------------------------------------------------
 
@@ -54,12 +114,12 @@ rule nice_ncbi_fasta:
     output:
         fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True)
     run:
-        with utils.RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
+        with utils.RawFile(input.fna) as IN, gzip.open(output.fna,'w') as OUT:
             for line in IN:
                 if line.startswith('>'):
                     name, *fields = line.lstrip('>').split()
-                    if name in id_map:
-                        new_name = '>' + id_map[name]
+                    if name in ncbi_id_map:
+                        new_name = '>' + ncbi_id_map[name]
                         line = ' '.join([new_name, name] + fields + ['\n'])
                 print(line,file=OUT,end='')
 
@@ -70,7 +130,7 @@ rule nice_ensembl_fasta:
     output:
         fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
     run:
-        with utils.RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
+        with utils.RawFile(input.fna) as IN, gzip.open(output.fna,'w') as OUT:
             for line in IN:
                 if line.startswith('>'):
                     name, *fields = line.lstrip('>').split()
@@ -91,7 +151,7 @@ rule nice_ncbi_gff:
         gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
     run:
         with utils.RawFile(input.gff) as IN, \
-            open(output.gff,'w') as OUT:
+            gzip.open(output.gff,'w') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
                 if id in ncbi_id_map:
@@ -106,7 +166,7 @@ rule nice_ensembl_gff:
         gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz')
     run:
         with utils.RawFile(input.gff) as IN, \
-            open(output.gff,'w') as OUT:
+            gzip.open(output.gff,'w') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
                 if id in ensem_id_map:
