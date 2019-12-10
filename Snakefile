@@ -1,8 +1,6 @@
-import gzip
-import bz2
-import lzma
 import os 
-
+import gzip
+import minus80 as m80
 
 #------------------------------------------------------------------------------
 #                "Labs grow great when old farts create workflows               
@@ -10,24 +8,8 @@ import os
 #                                                           -Rob
 #------------------------------------------------------------------------------
 
-
-class RawFile(object):
-    def __init__(self,filename):
-        self.filename = filename
-        if filename.endswith('.gz'):
-            self.handle = gzip.open(filename,'rt')
-        elif filename.endswith('bz2'):
-            self.handle = bz2.open(filename,'rt')
-        elif filename.endswith('xz'):
-            self.handle = lzma.open(filenaem,'rt')
-        else:
-            self.handle = open(filename,'r')
-    def __enter__(self):
-        return self.handle
-    def __exit__(self,dtype,value,traceback):
-        self.handle.close()
-
-
+from src import utils
+from pathlib import Path
 
 from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
 FTP = FTPRemoteProvider()
@@ -42,9 +24,7 @@ S3 = S3RemoteProvider(
     secret_access_key=s3_access_key
 )
 
-
 configfile: "config.yaml"
-
 
 ncbi_id_map = {
     'NC_009144.3':'chr1',  'NC_009145.3':'chr2',  'NC_009146.3':'chr3',
@@ -60,27 +40,69 @@ ncbi_id_map = {
     'NC_009174.3':'chr31', 'NC_009175.3':'chrX',  'NC_001640.1':'chrMt'
 }
 
+ensem_id_map = utils.gen_ensem_id_map()
 
-def gen_ensem_id_map():
-    ensem_map = {}
-    def inc_range(start, end):
-        return range(start, end+1)
-                            
-    for i in inc_range(1,31):
-        ensem_map[str(i)] = 'chr' + str(i)
-        if 'MT' or 'X' not in ensem_map:
-            ensem_map['MT'] = 'chrMt'
-            ensem_map['X'] = 'chrX'
-    return ensem_map   
-
-ensem_id_map = gen_ensem_id_map()
-
-#refseq - GCF v genbank - GCA
+# refseq - GCF v genbank - GCA
 NCBI_ASSEM = config['NCBI']['ASSEMBLY']
 ENSEMBL_ASSEM = config['ENSEMBL']['ASSEMBLY']
+BUCKET = config['BUCKET']
 
+# ----------------------------------------------------------
+#       Make the LocusPocus Databases for the GFF/Fasta
+# ----------------------------------------------------------
 
+rule make_transcriptomic_fna:
+    input:
+        fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ncbiEquCab3/thawed/tinydb.json',
+        gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ncbiEquCab3/thawed/tinydb.json'
+    output:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna.gz',keep_local=True)
+    run:
+        import locuspocus as lp
+        # Load the GFF and FNA dbs
+        fna = lp.Fasta('ncbiEquCab3') 
+        gff = lp.Loci('ncbiEquCab3')
+        with open(output.fna,'w') as OUT:
+            gff.set_primary_feature_type('gene')
+            for gene in genes:
+                longest = None
+                max_length = 0
+                # calulcate the length of each mRNA
+                for feature in gene.subloci:
+                    # skip non mRNA features
+                    if feature.feature_type != 'mRNA':
+                        continue
+                    # calculate the total length of all the exons that make up the mRNA
+                    exon_length = sum([len(x) for x in feature.subloci if x.feature_type == 'exon']) 
+                    # Store info it its the longest
+                    if exon_length > max_length:
+                        longest = feature
+                        max_length = exon_length
+                if longest is None:
+                    continue
+                # Print out the nucleotides for the longest mRNA
+                print(f">{gene.name}|{feature.name}",file=OUT)
+                exon_seq = ''.join([fna[x.chromosome][x.start:x.end] for x in longest.subloci if x.feature_type == 'exon'])
+                for chunk in [exon_seq[i:i+n] for i in range(0,len(exon_seq),90)]:
+                    print(chunk,file=OUT)
+                
+                
 
+rule make_locpoc_dbs:
+    input:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True),
+        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
+    output:
+        fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ncbiEquCab3/thawed/tinydb.json',
+        gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ncbiEquCab3/thawed/tinydb.json'
+    run:
+        # Create the loci db
+        import locuspocus as lp
+        fna = lp.Fasta.from_file('ncbiEquCab3', input.fna)  
+        # Create the GFF db
+        gff = lp.Loci('ncbiEquCab3')
+        gff.import_gff(input.gff)
+        
 
 # ----------------------------------------------------------
 #       Make "nice" FASTAs
@@ -90,14 +112,14 @@ rule nice_ncbi_fasta:
     input:
         fna = FTP.remote(f'{config["NCBI"]["FASTA"]}')
     output:
-        fna = S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz')
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True)
     run:
-        with RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
+        with utils.RawFile(input.fna) as IN, gzip.open(output.fna,'w') as OUT:
             for line in IN:
                 if line.startswith('>'):
                     name, *fields = line.lstrip('>').split()
-                    if name in id_map:
-                        new_name = '>' + id_map[name]
+                    if name in ncbi_id_map:
+                        new_name = '>' + ncbi_id_map[name]
                         line = ' '.join([new_name, name] + fields + ['\n'])
                 print(line,file=OUT,end='')
 
@@ -106,9 +128,9 @@ rule nice_ensembl_fasta:
     input:
         fna = FTP.remote(f'{config["ENSEMBL"]["FASTA"]}')
     output:
-        fna = S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
     run:
-        with RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
+        with utils.RawFile(input.fna) as IN, gzip.open(output.fna,'w') as OUT:
             for line in IN:
                 if line.startswith('>'):
                     name, *fields = line.lstrip('>').split()
@@ -126,10 +148,10 @@ rule nice_ncbi_gff:
     input:
         gff = FTP.remote(f'{config["NCBI"]["GFF"]}')
     output:
-        gff = S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
     run:
-        with RawFile(input.gff) as IN, \
-            open(output.gff,'w') as OUT:
+        with utils.RawFile(input.gff) as IN, \
+            gzip.open(output.gff,'w') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
                 if id in ncbi_id_map:
@@ -141,10 +163,10 @@ rule nice_ensembl_gff:
     input:
         gff = FTP.remote(f'{config["ENSEMBL"]["GFF"]}')
     output:
-        gff = S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz')
     run:
-        with RawFile(input.gff) as IN, \
-            open(output.gff,'w') as OUT:
+        with utils.RawFile(input.gff) as IN, \
+            gzip.open(output.gff,'w') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
                 if id in ensem_id_map:
@@ -158,64 +180,66 @@ rule nice_ensembl_gff:
 
 rule build_star_ncbi:
     input:
-        gff = S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz'),
-        fna = S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz'),
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz')
     output:
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/Genome'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/SA'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/SAindex'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrLength.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrName.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrNameLength.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrStart.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/exonGeTrInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/exonInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/geneInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/genomeParameters.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbInfo.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbList.fromGTF.out.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbList.out.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/transcriptInfo.tab')
-    threads: f'{int(config["THREADS"]["STAR"])}'
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/Genome'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/SA'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/SAindex'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrLength.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrName.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrNameLength.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/chrStart.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/exonGeTrInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/exonInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/geneInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/genomeParameters.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbInfo.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbList.fromGTF.out.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/sjdbList.out.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/transcriptInfo.tab')
+    threads: int(f'{int(config["THREADS"]["STAR"])}')
     shell:
-        '''STAR \
-          --runThreadN {threads} \
+        f'''
+          STAR \
+          --runThreadN {{threads}} \
           --runMode genomeGenerate \
-          --genomeDir HorseGeneAnnotation/public/refgen/{NCBI_ASSEM}/STAR_INDICES/ \
-          --genomeFastaFiles {input.fna} \
-          --sjdbGTFfile {input.gff} \
+          --genomeDir {BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/ \
+          --genomeFastaFiles {{input.fna}} \
+          --sjdbGTFfile {{input.gff}} \
           --sjdbGTFtagExonParentTranscript Parent
         '''
 
 
 rule build_star_ensembl:
     input:
-        gff = S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz'),
-        fna = S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz'),
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
     output:
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/Genome'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/SA'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/SAindex'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrLength.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrName.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrNameLength.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrStart.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/exonGeTrInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/exonInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/geneInfo.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/genomeParameters.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbInfo.txt'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbList.fromGTF.out.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbList.out.tab'),
-        S3.remote('HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/transcriptInfo.tab') 
-    threads: f'{int(config["THREADS"]["STAR"])}'
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/Genome'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/SA'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/SAindex'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrLength.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrName.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrNameLength.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/chrStart.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/exonGeTrInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/exonInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/geneInfo.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/genomeParameters.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbInfo.txt'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbList.fromGTF.out.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/sjdbList.out.tab'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/transcriptInfo.tab') 
+    threads: int(f'{int(config["THREADS"]["STAR"])}')
     shell:
-        '''STAR \
-          --runThreadN {threads} \
+        f'''
+          STAR \
+          --runThreadN {{threads}} \
           --runMode genomeGenerate \
-          --genomeDir HorseGeneAnnotation/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/ \
-          --genomeFastaFiles {input.fna} \
-          --sjdbGTFfile {input.gff} \
+          --genomeDir {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/ \
+          --genomeFastaFiles {{input.fna}} \
+          --sjdbGTFfile {{input.gff}} \
           --sjdbGTFtagExonParentTranscript Parent 
         '''
 
