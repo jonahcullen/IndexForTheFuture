@@ -47,6 +47,16 @@ NCBI_ASSEM = config['NCBI']['ASSEMBLY']
 ENSEMBL_ASSEM = config['ENSEMBL']['ASSEMBLY']
 BUCKET = config['BUCKET']
 
+
+# ----------------------------------------------------------
+#       It's the all, ya'll
+# ----------------------------------------------------------
+
+rule all:
+    input:
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna.gz')
+
+
 # ----------------------------------------------------------
 #       Make the LocusPocus Databases for the GFF/Fasta
 # ----------------------------------------------------------
