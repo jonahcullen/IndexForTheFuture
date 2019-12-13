@@ -124,7 +124,7 @@ rule nice_ncbi_fasta:
     output:
         fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True)
     run:
-        with utils.RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
+        with utils.RawFile(input.fna) as IN, gzip.open(output.fna,'wt') as OUT:
             for line in IN:
                 if line.startswith('>'):
                     name, *fields = line.lstrip('>').split()
@@ -140,7 +140,7 @@ rule nice_ensembl_fasta:
     output:
         fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
     run:
-        with utils.RawFile(input.fna) as IN, open(output.fna,'w') as OUT:
+        with utils.RawFile(input.fna) as IN, gzip.open(output.fna,'wt') as OUT:
             for line in IN:
                 if line.startswith('>'):
                     name, *fields = line.lstrip('>').split()
@@ -161,7 +161,7 @@ rule nice_ncbi_gff:
         gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
     run:
         with utils.RawFile(input.gff) as IN, \
-            open(output.gff,'w') as OUT:
+            gzip.open(output.gff,'wt') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
                 if id in ncbi_id_map:
@@ -176,7 +176,7 @@ rule nice_ensembl_gff:
         gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz')
     run:
         with utils.RawFile(input.gff) as IN, \
-            open(output.gff,'w') as OUT:
+            gzip.open(output.gff,'wt') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
                 if id in ensem_id_map:
