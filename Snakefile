@@ -74,7 +74,7 @@ rule make_transcriptomic_fna:
         gff = lp.Loci('ncbiEquCab3')
         with open(output.fna,'w') as OUT:
             gff.set_primary_feature_type('gene')
-            for gene in genes:
+            for gene in gff:
                 longest = None
                 max_length = 0
                 # calulcate the length of each mRNA
@@ -92,7 +92,15 @@ rule make_transcriptomic_fna:
                     continue
                 # Print out the nucleotides for the longest mRNA
                 print(f">{gene.name}|{feature.name}",file=OUT)
-                exon_seq = ''.join([fna[x.chromosome][x.start:x.end] for x in longest.subloci if x.feature_type == 'exon'])
+#                exon_seq = ''.join([fna[x.chromosome][x.start:x.end] for x in longest.subloci if x.feature_type == 'exon'])
+                exon_seq = ''
+                for x in longest.subloci:
+                    # add in a print statement to get the bad chromosome
+                    print(x.chromosome)
+                    if x.feature_type != 'exon':
+                        continue
+                    exon_seq += fna[x.chromosome][x.start:x.end]
+                n = 90
                 for chunk in [exon_seq[i:i+n] for i in range(0,len(exon_seq),90)]:
                     print(chunk,file=OUT)
                 
