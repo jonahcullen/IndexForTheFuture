@@ -54,7 +54,7 @@ BUCKET = config['BUCKET']
 
 rule all:
     input:
-        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna.gz')
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna.gz'),
         S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna.gz')
 
 
@@ -211,7 +211,7 @@ rule nice_ensembl_fasta:
     input:
         fna = FTP.remote(f'{config["ENSEMBL"]["FASTA"]}')
     output:
-        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz')
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz',keep_local=True)
     run:
         with utils.RawFile(input.fna) as IN, gzip.open(output.fna,'wt') as OUT:
             for line in IN:
@@ -246,7 +246,7 @@ rule nice_ensembl_gff:
     input:
         gff = FTP.remote(f'{config["ENSEMBL"]["GFF"]}')
     output:
-        gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff3.gz')
+        gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff.gz',keep_local=True)
     run:
         with utils.RawFile(input.gff) as IN, \
             gzip.open(output.gff,'wt') as OUT:
