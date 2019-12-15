@@ -55,10 +55,11 @@ BUCKET = config['BUCKET']
 rule all:
     input:
         S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna.gz')
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna.gz')
 
 
 # ----------------------------------------------------------
-#       Make the LocusPocus Databases for the GFF/Fasta
+#       Make the LocusPocus Databases for the GFF/Fasta (NCBI)
 # ----------------------------------------------------------
 
 rule make_transcriptomic_fna:
@@ -121,6 +122,70 @@ rule make_locpoc_dbs:
         gff = lp.Loci('ncbiEquCab3')
         gff.import_gff(input.gff)
         
+
+# ----------------------------------------------------------
+#       Make the LocusPocus Databases for the GFF/Fasta (ENSEMBL)
+# ----------------------------------------------------------
+
+rule make_transcriptomic_fna_ensembl:
+    input:
+        fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ensemblEquCab3/thawed/tinydb.json',
+        gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ensemblEquCab3/thawed/tinydb.json'
+    output:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna.gz',keep_local=True)
+    run:
+        import locuspocus as lp
+        # Load the GFF and FNA dbs
+        fna = lp.Fasta('ensemblEquCab3') 
+        gff = lp.Loci('ensemblEquCab3')
+        with open(output.fna,'w') as OUT:
+            gff.set_primary_feature_type('gene')
+            for gene in gff:
+                longest = None
+                max_length = 0
+                # calulcate the length of each mRNA
+                for feature in gene.subloci:
+                    # skip non mRNA features
+                    if feature.feature_type != 'mRNA':
+                        continue
+                    # calculate the total length of all the exons that make up the mRNA
+                    exon_length = sum([len(x) for x in feature.subloci if x.feature_type == 'exon']) 
+                    # Store info it its the longest
+                    if exon_length > max_length:
+                        longest = feature
+                        max_length = exon_length
+                if longest is None:
+                    continue
+                # Print out the nucleotides for the longest mRNA
+                print(f">{gene.name}|{feature.name}",file=OUT)
+#                exon_seq = ''.join([fna[x.chromosome][x.start:x.end] for x in longest.subloci if x.feature_type == 'exon'])
+                exon_seq = ''
+                for x in longest.subloci:
+                    # add in a print statement to get the bad chromosome
+                    print(x.chromosome)
+                    if x.feature_type != 'exon':
+                        continue
+                    exon_seq += fna[x.chromosome][x.start:x.end]
+                n = 90
+                for chunk in [exon_seq[i:i+n] for i in range(0,len(exon_seq),90)]:
+                    print(chunk,file=OUT)
+
+
+rule make_locpoc_dbs_ensembl:
+    input:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz',keep_local=True),
+        gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff.gz',keep_local=True)
+    output:
+        fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ensemblEquCab3/thawed/tinydb.json',
+        gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ensemblEquCab3/thawed/tinydb.json'
+    run:
+        # Create the loci db
+        import locuspocus as lp
+        fna = lp.Fasta.from_file('ensemblEquCab3', input.fna)  
+        # Create the GFF db
+        gff = lp.Loci('ensemblEquCab3')
+        gff.import_gff(input.gff)
+
 
 # ----------------------------------------------------------
 #       Make "nice" FASTAs
