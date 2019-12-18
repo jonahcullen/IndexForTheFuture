@@ -1,6 +1,7 @@
 BUCKET: 'HorseGeneAnnotation'
 THREADS:
     STAR: 30
+    SALMON: 2
 NCBI:
     ASSEMBLY: 'GCF_002863925.1_EquCab3.0'
     FASTA: 'ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/Equus_caballus/all_assembly_versions/GCF_002863925.1_EquCab3.0/GCF_002863925.1_EquCab3.0_genomic.fna.gz'
