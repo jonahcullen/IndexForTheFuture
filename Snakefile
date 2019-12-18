@@ -54,9 +54,9 @@ BUCKET = config['BUCKET']
 
 rule all:
     input:
-        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna.gz'),
-        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna.gz')
-
+#        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna'),
+#        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/gentrome.fa')
 
 # ----------------------------------------------------------
 #       Make the LocusPocus Databases for the GFF/Fasta (NCBI)
@@ -67,7 +67,7 @@ rule make_transcriptomic_fna:
         fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ncbiEquCab3/thawed/tinydb.json',
         gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ncbiEquCab3/thawed/tinydb.json'
     output:
-        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna.gz',keep_local=True)
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna',keep_local=True)
     run:
         import locuspocus as lp
         # Load the GFF and FNA dbs
@@ -132,7 +132,7 @@ rule make_transcriptomic_fna_ensembl:
         fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ensemblEquCab3/thawed/tinydb.json',
         gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ensemblEquCab3/thawed/tinydb.json'
     output:
-        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna.gz',keep_local=True)
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna',keep_local=True)
     run:
         import locuspocus as lp
         # Load the GFF and FNA dbs
@@ -327,6 +327,34 @@ rule build_star_ensembl:
         '''
 
 # ----------------------------------------------------------
-#       Build SALMON indices
+#       Build SALMON indices (NCBI)
 # ----------------------------------------------------------
+
+rule prepare_hybrid_fasta_ncbi:
+    input:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True),
+        trx = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna',keep_local=True),
+        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
+    output:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/gentrome.fa',keep_local=True),
+        decoy_ids = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/decoys.txt',keep_local=True)
+    threads: int(f'{int(config["THREADS"]["SALMON"])}')
+    shell:
+        f'''
+          gunzip -c {{input.fna}} > {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna &&
+          gunzip -c {{input.gff}} > {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff &&
+          gffread -T {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff -o {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gtf &&
+          bash generateDecoyTranscriptome.sh \
+          -j {{threads}} \
+          -b /home/.conda/bin/bedtools \
+          -m /home/.conda/bin/mashmap \
+          -a {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gtf \
+          -g {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna \
+          -t {{input.trx}} \
+          -o {BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/
+        '''
+
+
+#rule build_salmon_ncbi:
+#    input:
 
