@@ -1,11 +1,13 @@
 BUCKET: 'HorseGeneAnnotation'
 THREADS:
     STAR: 30
+    SALMON: 2
 NCBI:
     ASSEMBLY: 'GCF_002863925.1_EquCab3.0'
     FASTA: 'ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/Equus_caballus/all_assembly_versions/GCF_002863925.1_EquCab3.0/GCF_002863925.1_EquCab3.0_genomic.fna.gz'
     GFF: 'ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/Equus_caballus/all_assembly_versions/GCF_002863925.1_EquCab3.0/GCF_002863925.1_EquCab3.0_genomic.gff.gz'
 ENSEMBL:
     ASSEMBLY: 'Equus_caballus.EquCab3.0'
-    FASTA: 'ftp://ftp.ensembl.org/pub/release-95/fasta/equus_caballus/dna/Equus_caballus.EquCab3.0.95.dna.toplevel.fa.gz'
+    FASTA_OLD?: 'ftp://ftp.ensembl.org/pub/release-95/fasta/equus_caballus/dna/Equus_caballus.EquCab3.0.95.dna.toplevel.fa.gz'
+    FASTA: 'ftp://ftp.ensembl.org/pub/release-95/fasta/equus_caballus/dna/Equus_caballus.EquCab3.0.dna.toplevel.fa.gz'
     GFF: 'ftp://ftp.ensembl.org/pub/release-95/gff3/equus_caballus/Equus_caballus.EquCab3.0.95.gff3.gz'
