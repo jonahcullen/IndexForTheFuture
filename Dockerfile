@@ -62,3 +62,5 @@ RUN pip install minus80 locuspocus
 
 COPY . /home/RNAMapping 
 WORKDIR /home/RNAMapping
+
+ENTRYPOINT ["/usr/bin/zsh"]
