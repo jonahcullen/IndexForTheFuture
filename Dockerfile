@@ -45,7 +45,7 @@ RUN /home/.conda/bin/conda init zsh
 RUN conda install -c bioconda -c conda-forge -y \
     snakemake=5.8.1 \
     star=2.6.1 \
-    salmon=0.13.1
+    salmon=1.0.0
 
 # Clone SalmonTools and modify path
 RUN git clone https://github.com/COMBINE-lab/SalmonTools.git
