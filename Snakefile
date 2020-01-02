@@ -56,7 +56,10 @@ rule all:
     input:
 #        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna'),
 #        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna'),
-        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/gentrome.fa')
+#        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/gentrome.fa')
+#        f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/download.done'
+        f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/download.done',
+        f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/download.done'
 
 # ----------------------------------------------------------
 #       Make the LocusPocus Databases for the GFF/Fasta (NCBI)
@@ -285,12 +288,12 @@ rule build_star_ncbi:
     shell:
         f'''
           STAR \
-          --runThreadN {{threads}} \
-          --runMode genomeGenerate \
-          --genomeDir {BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/ \
-          --genomeFastaFiles {{input.fna}} \
-          --sjdbGTFfile {{input.gff}} \
-          --sjdbGTFtagExonParentTranscript Parent
+            --runThreadN {{threads}} \
+            --runMode genomeGenerate \
+            --genomeDir {BUCKET}/public/refgen/{NCBI_ASSEM}/STAR_INDICES/ \
+            --genomeFastaFiles {{input.fna}} \
+            --sjdbGTFfile {{input.gff}} \
+            --sjdbGTFtagExonParentTranscript Parent
         '''
 
 
@@ -318,12 +321,12 @@ rule build_star_ensembl:
     shell:
         f'''
           STAR \
-          --runThreadN {{threads}} \
-          --runMode genomeGenerate \
-          --genomeDir {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/ \
-          --genomeFastaFiles {{input.fna}} \
-          --sjdbGTFfile {{input.gff}} \
-          --sjdbGTFtagExonParentTranscript Parent 
+            --runThreadN {{threads}} \
+            --runMode genomeGenerate \
+            --genomeDir {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/STAR_INDICES/ \
+            --genomeFastaFiles {{input.fna}} \
+            --sjdbGTFfile {{input.gff}} \
+            --sjdbGTFtagExonParentTranscript Parent 
         '''
 
 # ----------------------------------------------------------
@@ -332,12 +335,13 @@ rule build_star_ensembl:
 
 rule prepare_hybrid_fasta_ncbi:
     input:
-        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True),
-        trx = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna',keep_local=True),
-        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz'),
+        trx = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna'),
+        gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz')
     output:
-        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/gentrome.fa',keep_local=True),
-        decoy_ids = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/decoys.txt',keep_local=True)
+        touch(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/download.done'),
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/gentrome.fa'),
+        decoy_ids = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/decoys.txt')
     threads: int(f'{int(config["THREADS"]["SALMON"])}')
     shell:
         f'''
@@ -345,16 +349,107 @@ rule prepare_hybrid_fasta_ncbi:
           gunzip -c {{input.gff}} > {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff &&
           gffread -T {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff -o {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gtf &&
           bash generateDecoyTranscriptome.sh \
-          -j {{threads}} \
-          -b /home/.conda/bin/bedtools \
-          -m /home/.conda/bin/mashmap \
-          -a {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gtf \
-          -g {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna \
-          -t {{input.trx}} \
-          -o {BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/
+            -j {{threads}} \
+            -b /home/.conda/bin/bedtools \
+            -m /home/.conda/bin/mashmap \
+            -a {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gtf \
+            -g {BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna \
+            -t {{input.trx}} \
+            -o {BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/
         '''
 
 
-#rule build_salmon_ncbi:
-#    input:
+rule build_salmon_ncbi:
+    input:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/gentrome.fa'),
+        decoy_ids = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/decoys.txt')
+    output:
+        touch(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/download.done'),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/duplicate_clusters.tsv',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/complete_ref_lens.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/seq.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/rank.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/reflengths.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/ctg_offsets.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/eqtable.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/ctable.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/refAccumLengths.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/refseq.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/info.json',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/pos.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/mphf.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/versionInfo.json',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/ref_indexing.log',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/pre_indexing.log',keep_local=True)
+    threads: int(f'{int(config["THREADS"]["SALMON"])}')
+    shell:
+        f'''
+          salmon index \
+            -i {BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX \
+            -t {{input.fna}} \
+            -d {{input.decoy_ids}} \
+            -p {{threads}}
+         '''
+
+# ----------------------------------------------------------
+#       Build SALMON indices (ENSEMBL)
+# ----------------------------------------------------------
+
+rule prepare_hybrid_fasta_ensembl:
+    input:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna.gz'),
+        trx = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna'),
+        gff = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff.gz')
+    output:
+        touch(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SalmonMetadata/download.done'),
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SalmonMetadata/gentrome.fa'),
+        decoy_ids = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SalmonMetadata/decoys.txt')
+    threads: int(f'{int(config["THREADS"]["SALMON"])}')
+    shell:
+        f'''
+          gunzip -c {{input.fna}} > {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna &&
+          gunzip -c {{input.gff}} > {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff &&
+          gffread -T {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gff -o {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gtf &&
+          bash generateDecoyTranscriptome.sh \
+            -j {{threads}} \
+            -b /home/.conda/bin/bedtools \
+            -m /home/.conda/bin/mashmap \
+            -a {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.gtf \
+            -g {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_genomic.nice.fna \
+            -t {{input.trx}} \
+            -o {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SalmonMetadata/
+        '''
+
+
+rule build_salmon_ensembl:
+    input:
+        fna = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SalmonMetadata/gentrome.fa'),
+        decoy_ids = S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SalmonMetadata/decoys.txt')
+    output:
+        touch(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/download.done'),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/duplicate_clusters.tsv',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/complete_ref_lens.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/seq.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/rank.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/reflengths.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/ctg_offsets.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/eqtable.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/ctable.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/refAccumLengths.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/refseq.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/info.json',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/pos.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/mphf.bin',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/versionInfo.json',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/ref_indexing.log',keep_local=True),
+        S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/pre_indexing.log',keep_local=True)
+    threads: int(f'{int(config["THREADS"]["SALMON"])}')
+    shell:
+        f'''
+          salmon index \
+            -i {BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX \
+            -t {{input.fna}} \
+            -d {{input.decoy_ids}} \
+            -p {{threads}}
+         '''
 
