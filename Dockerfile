@@ -43,24 +43,27 @@ RUN /home/.conda/bin/conda init zsh
 
 # Install snakemake, STAR, and salmon
 RUN conda install -c bioconda -c conda-forge -y \
-    snakemake=5.8.1 \
-    star=2.6.1 \
-    salmon=1.0.0
+    snakemake=6.1.1 \
+    star=2.7.8 \
+    salmon=1.4.0 \
+    mashmap=2.0 \
+    gffread=0.12.1 \
+    bedtools=2.30.0
 
 # Clone SalmonTools and modify path
 RUN git clone https://github.com/COMBINE-lab/SalmonTools.git
 ENV PATH=/home/.local/src/SalmonTools/scripts:${PATH}
 
 # Install mashmap, gffread, and bedtools
-RUN conda install -c bioconda -y \
-    mashmap=2.0 \
-    gffread=0.11.6 \
-    bedtools=2.29.1
+#RUN conda install -c bioconda -y \
+#    mashmap=2.0 \
+#    gffread=0.12.1 \
+#    bedtools=2.30.0
 
 # Install minus80 and locuspocus
 RUN pip install minus80 locuspocus
 
-COPY . /home/RNAMapping 
-WORKDIR /home/RNAMapping
-
-ENTRYPOINT ["/usr/bin/zsh"]
+#COPY . /home/RNAMapping 
+#WORKDIR /home/RNAMapping
+#
+#ENTRYPOINT ["/usr/bin/zsh"]
