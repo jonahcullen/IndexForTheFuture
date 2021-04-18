@@ -62,6 +62,8 @@ ENV PATH=/home/.local/src/SalmonTools/scripts:${PATH}
 
 # Install minus80 and locuspocus
 RUN pip install minus80 locuspocus
+#RUN pip install -e git+git://github.com/LinkageIO/Minus80.git#egg=minus80
+#RUN pip install -e git+git://github.com/LinkageIO/LocusPocus.git#egg=locuspocus
 
 #COPY . /home/RNAMapping 
 #WORKDIR /home/RNAMapping

@@ -1,5 +1,3 @@
-container: "docker://jonahcullen/ec3index:v0.1.2"
-
 localrules: 
     nice_ncbi_fasta,nice_ensembl_fasta, \
     nice_ncbi_gff,nice_ensembl_gff, \
@@ -7,8 +5,8 @@ localrules:
     make_transcriptomic_fna_ensembl,make_locpoc_dbs_ensembl
 
 import os 
-#import gzip
-#import minus80 as m80
+import gzip
+import minus80 as m80
 
 #------------------------------------------------------------------------------
 #                "Labs grow great when old farts create workflows               
@@ -103,26 +101,26 @@ rule all:
        #    keep_local=True
        #),
        ## LOCUSPOCUS DBS
-        expand(
-            '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Fasta.{release}/thawed/tinydb.json',
-            bucket=config['bucket'],
-            release=[
-                "GCF_002863925.1_EquCab3.0",
-                "Equus_caballus.EquCab3.0.103"
-            ]
-        )
-       ## NICE TRANSCRIPTOMIC
-       #S3.remote(
-       #    expand(
-       #        '{bucket}/public/refgen/{release}/{release}_transcriptomic.nice.fna',
-       #        bucket=config['bucket'],
-       #        release=[
-       #            "GCF_002863925.1_EquCab3.0",
-       #            "Equus_caballus.EquCab3.0.103"
-       #        ]
-       #    ),
-       #    keep_local=True
+       #expand(
+       #    '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Fasta.{release}/thawed/tinydb.json',
+       #    bucket=config['bucket'],
+       #    release=[
+       #        "GCF_002863925.1_EquCab3.0",
+       #        "Equus_caballus.EquCab3.0.103"
+       #    ]
        #)
+       ## NICE TRANSCRIPTOMIC
+        S3.remote(
+            expand(
+                '{bucket}/public/refgen/{release}/{release}_transcriptomic.nice.fna',
+                bucket=config['bucket'],
+                release=[
+                    "GCF_002863925.1_EquCab3.0",
+                    "Equus_caballus.EquCab3.0.103"
+                ]
+            ),
+            keep_local=True
+        )
 
        #expand('{bucket}/public/refgen/{u.resource}/{u.release}/{u.release}_genomic.nice.fna.gz',
        #    u=units.itertuples(),
@@ -154,9 +152,9 @@ rule nice_fasta:
             '{bucket}/public/refgen/{release}/{release}_genomic.nice.fna.gz'
         )
     threads: 2
-    resources:
-        time   = 120,
-        mem_mb = 6000
+   #resources:
+   #    time   = 120,
+   #    mem_mb = 6000
     run:
         # get convert dict based on release
         id_map = utils.gen_ensem_id_map()
@@ -203,13 +201,13 @@ rule nice_gff:
             '{bucket}/public/refgen/{release}/{release}_genomic.nice.gff.gz'
         )
     threads: 2
-    resources:
-        time   = 120,
-        mem_mb = 6000
+   #resources:
+   #    time   = 120,
+   #    mem_mb = 6000
     run:
         # get convert dict based on release
         id_map = utils.gen_ensem_id_map()
-        if "NCBI" in config[wildcards.release]["resource"]:
+        if 'NCBI' in config[wildcards.release]['resource']:
             id_map = ncbi_id_map
         
         with utils.RawFile(input.gff) as IN, \
@@ -239,7 +237,7 @@ rule nice_gff:
 ##       Make the LocusPocus Databases for the GFF/Fasta (NCBI)
 ## ----------------------------------------------------------
 
-rule make_locpoc_dbs_ncbi:
+rule make_locpoc_dbs:
     input:
        #fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True),
        #gff = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.gff.gz',keep_local=True)
@@ -250,65 +248,70 @@ rule make_locpoc_dbs_ncbi:
             f'{config["bucket"]}/public/refgen/{{release}}/{{release}}_genomic.nice.gff.gz'
         )
     output:
-       #fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ncbiEquCab3/thawed/tinydb.json',
-       #gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ncbiEquCab3/thawed/tinydb.json'
-        fna = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Loci.{release}/thawed/tinydb.json',
-        gff = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Fasta.{release}/thawed/tinydb.json'
+        fna_locpoc = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.{release}/thawed/tinydb.json',
+        gff_locpoc = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.{release}/thawed/tinydb.json'
+       #fna = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Loci.{release}/thawed/tinydb.json',
+       #gff = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Fasta.{release}/thawed/tinydb.json'
        #fna = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Loci.{resource}/thawed/tinydb.json',
        #gff = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Fasta.{resource}/thawed/tinydb.json'
     run:
+        # freezable name - get ensembl release number
+        freeze = f'ensemblEc3v{wildcards.release.split(".")[-1]}'
+        if 'NCBI' in config[wildcards.release]['resource']:
+            freeze = 'ncbiEc3'
+
         # Create the loci db
         import locuspocus as lp
-        fna = lp.Fasta.from_file('ncbiEquCab3', input.fna)  
+        fna = lp.Fasta.from_file(freeze,input.fna_nice)
         # Create the GFF db
-        gff = lp.Loci('ncbiEquCab3')
-        gff.import_gff(input.gff)
+        gff = lp.Loci(freeze)
+        gff.import_gff(input.gff_nice)
 
-rule make_transcriptomic_fna_ncbi:
+rule make_transcriptomic_fna:
     input:
-        #fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.ncbiEquCab3/thawed/tinydb.json',
-        #gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.ncbiEquCab3/thawed/tinydb.json'
-         fna = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Loci.{release}/thawed/tinydb.json',
-         gff = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Fasta.{release}/thawed/tinydb.json'
+         fna = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Loci.{release}/thawed/tinydb.json',
+         gff = Path(m80.Config.cf.options.basedir) / 'datasets/v1/Fasta.{release}/thawed/tinydb.json'
+        #fna = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Loci.{release}/thawed/tinydb.json',
+        #gff = '/panfs/roc/groups/0/fried255/cull0084/.minus80/datasets/v1/Fasta.{release}/thawed/tinydb.json'
     output:
-         fna = S3.remote('{bucket}/public/refgen/{release}/{release}_transcriptomic.nice.fna',keep_local=True)
-#    run:
-#        import locuspocus as lp
-#        # Load the GFF and FNA dbs
-#        fna = lp.Fasta('ncbiEquCab3') 
-#        gff = lp.Loci('ncbiEquCab3')
-#        with open(output.fna,'w') as OUT:
-#            gff.set_primary_feature_type('gene')
-#            for gene in gff:
-#                longest = None
-#                max_length = 0
-#                # calulcate the length of each mRNA
-#                for feature in gene.subloci:
-#                    # skip non mRNA features
-#                    if feature.feature_type != 'mRNA':
-#                        continue
-#                    # calculate the total length of all the exons that make up the mRNA
-#                    exon_length = sum([len(x) for x in feature.subloci if x.feature_type == 'exon']) 
-#                    # Store info it its the longest
-#                    if exon_length > max_length:
-#                        longest = feature
-#                        max_length = exon_length
-#                if longest is None:
-#                    continue
-#                # Print out the nucleotides for the longest mRNA
-#                print(f">{gene.name}|{feature.name}",file=OUT)
-##                exon_seq = ''.join([fna[x.chromosome][x.start:x.end] for x in longest.subloci if x.feature_type == 'exon'])
-#                exon_seq = ''
-#                for x in longest.subloci:
-#                    # add in a print statement to get the bad chromosome
-#                    print(x.chromosome)
-#                    if x.feature_type != 'exon':
-#                        continue
-#                    exon_seq += fna[x.chromosome][x.start:x.end]
-#                n = 90
-#                for chunk in [exon_seq[i:i+n] for i in range(0,len(exon_seq),90)]:
-#                    print(chunk,file=OUT)
-#                
+         fna_trx = S3.remote('{bucket}/public/refgen/{release}/{release}_transcriptomic.nice.fna',keep_local=True)
+    run:
+        import locuspocus as lp
+        # Load the GFF and FNA dbs
+        fna = lp.Fasta(wildcards.release) 
+        gff = lp.Loci(wildcards.release)
+        with open(output.fna_trx,'w') as OUT:
+            gff.set_primary_feature_type('gene')
+            for gene in gff:
+                longest = None
+                max_length = 0
+                # calulcate the length of each mRNA
+                for feature in gene.subloci:
+                    # skip non mRNA features
+                    if feature.feature_type != 'mRNA':
+                        continue
+                    # calculate the total length of all the exons that make up the mRNA
+                    exon_length = sum([len(x) for x in feature.subloci if x.feature_type == 'exon']) 
+                    # Store info it its the longest
+                    if exon_length > max_length:
+                        longest = feature
+                        max_length = exon_length
+                if longest is None:
+                    continue
+                # Print out the nucleotides for the longest mRNA
+                print(f">{gene.name}|{feature.name}",file=OUT)
+#                exon_seq = ''.join([fna[x.chromosome][x.start:x.end] for x in longest.subloci if x.feature_type == 'exon'])
+                exon_seq = ''
+                for x in longest.subloci:
+                    # add in a print statement to get the bad chromosome
+                    print(x.chromosome)
+                    if x.feature_type != 'exon':
+                        continue
+                    exon_seq += fna[x.chromosome][x.start:x.end]
+                n = 90
+                for chunk in [exon_seq[i:i+n] for i in range(0,len(exon_seq),90)]:
+                    print(chunk,file=OUT)
+                
 #rule make_locpoc_dbs_ncbi:
 #    input:
 #        fna = S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_genomic.nice.fna.gz',keep_local=True),
