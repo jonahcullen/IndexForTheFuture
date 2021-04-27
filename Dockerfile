@@ -54,12 +54,6 @@ RUN conda install -c bioconda -c conda-forge -y \
 RUN git clone https://github.com/COMBINE-lab/SalmonTools.git
 ENV PATH=/home/.local/src/SalmonTools/scripts:${PATH}
 
-# Install mashmap, gffread, and bedtools
-#RUN conda install -c bioconda -y \
-#    mashmap=2.0 \
-#    gffread=0.12.1 \
-#    bedtools=2.30.0
-
 # Install minus80 and locuspocus
 RUN pip install minus80==1.0.0 \
     locuspocus==1.0.2

@@ -1,9 +1,3 @@
-#localrules: 
-#    nice_ncbi_fasta,nice_ensembl_fasta, \
-#    nice_ncbi_gff,nice_ensembl_gff, \
-#    make_transcriptomic_fna_ncbi,make_locpoc_dbs_ncbi, \
-#    make_transcriptomic_fna_ensembl,make_locpoc_dbs_ensembl
-
 import os 
 import gzip
 import minus80 as m80
@@ -49,79 +43,13 @@ ncbi_id_map = {
 
 ensem_id_map = utils.gen_ensem_id_map()
 
-# refseq - GCF v genbank - GCA
-#NCBI_ASSEM = config['NCBI']['ASSEMBLY']
-#ENSEMBL_ASSEM = config['ENSEMBL']['ASSEMBLY']
-#BUCKET = config['BUCKET']
-#
-#ASSEM=[config['NCBI']['ASSEMBLY'],config['ENSEMBL']['ASSEMBLY']]
-#print(ASSEM)
-
-#print(config["Ensembl"]["fasta"])
-#print(config['NCBI']['fasta'])
-
-
-
 # ----------------------------------------------------------
 #       It's the all, ya'll
 # ----------------------------------------------------------
 
 rule all:
     input:
-       #S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/{NCBI_ASSEM}_transcriptomic.nice.fna'),
-       #S3.remote(f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/{ENSEMBL_ASSEM}_transcriptomic.nice.fna'),
-       #S3.remote(f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/gentrome.fa')
-       #f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SalmonMetadata/download.done'
-       ## PREVIOUS WORKING ALL INPUT
-       #f'{BUCKET}/public/refgen/{NCBI_ASSEM}/SALMON_INDEX/download.done',
-       #f'{BUCKET}/public/refgen/{ENSEMBL_ASSEM}/SALMON_INDEX/download.done'
-        # NICE FASTA
-       #S3.remote(
-       #    expand(
-       #        '{bucket}/public/refgen/{release}/{release}_genomic.nice.fna.gz',
-       #        bucket=config['bucket'],
-       #        #resource=["Ensembl","NCBI"],
-       #        release=[
-       #            "GCF_002863925.1_EquCab3.0",
-       #            "Equus_caballus.EquCab3.0.103"
-       #        ]
-       #    ),
-       #    keep_local=True
-       #),
-       ## NICE GFF
-       #S3.remote(
-       #    expand(
-       #        '{bucket}/public/refgen/{release}/{release}_genomic.nice.gff.gz',
-       #        bucket=config['bucket'],
-       #        #resource=["Ensembl","NCBI"],
-       #        release=[
-       #            "GCF_002863925.1_EquCab3.0",
-       #            "Equus_caballus.EquCab3.0.103"
-       #        ]
-       #    ),
-       #    keep_local=True
-       #),
-       ## LOCUSPOCUS DBS
-       #expand(
-       #    '/root/.minus80/datasets/v1/Fasta.{release}/thawed/tinydb.json',
-       #    bucket=config['bucket'],
-       #    release=[
-       #        'GCF_002863925.1_EquCab3.0',
-       #        'Equus_caballus.EquCab3.0.103'
-       #    ]
-       #)
-       ## NICE TRANSCRIPTOMIC
-       #S3.remote(
-       #    expand(
-       #        '{bucket}/public/refgen/{release}/{release}_transcriptomic.nice.fna',
-       #        bucket=config['bucket'],
-       #        release=[
-       #            "GCF_002863925.1_EquCab3.0",
-       #            "Equus_caballus.EquCab3.0.103"
-       #        ]
-       #    ),
-       #    keep_local=True
-       #),
+       # STAR index
         expand('{bucket}/public/refgen/{release}/STAR_INDICES/upload.done',
             bucket=config['bucket'],
             release=[
@@ -129,28 +57,7 @@ rule all:
                 'Equus_caballus.EquCab3.0.103'
             ]
         ),
-       #S3.remote(
-       #    expand(
-       #        '{bucket}/public/refgen/{release}/SalmonMetadata/gentrome.fa',
-       #        bucket=config['bucket'],
-       #        release=[
-       #            'GCF_002863925.1_EquCab3.0',
-       #           #'Equus_caballus.EquCab3.0.103'
-       #        ]
-       #    ),
-       #    keep_local=True
-       #)
-       #S3.remote(
-       #    expand(
-       #        '{bucket}/public/refgen/{release}/SALMON_INDEX/upload.done',
-       #        bucket=config['bucket'],
-       #        release=[
-       #            'GCF_002863925.1_EquCab3.0',
-       #            'Equus_caballus.EquCab3.0.103'
-       #        ]
-       #    ),
-       #    keep_local=True
-       #)
+       # Salmon index
         expand('{bucket}/public/refgen/{release}/SALMON_INDEX/upload.done',
             bucket=config['bucket'],
             release=[
