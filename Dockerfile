@@ -61,7 +61,8 @@ ENV PATH=/home/.local/src/SalmonTools/scripts:${PATH}
 #    bedtools=2.30.0
 
 # Install minus80 and locuspocus
-RUN pip install minus80 locuspocus
+RUN pip install minus80==1.0.0 \
+    locuspocus==1.0.2
 #RUN pip install -e git+git://github.com/LinkageIO/Minus80.git#egg=minus80
 #RUN pip install -e git+git://github.com/LinkageIO/LocusPocus.git#egg=locuspocus
 
