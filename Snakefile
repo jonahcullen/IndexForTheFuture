@@ -62,18 +62,18 @@ rule all:
         expand('{bucket}/public/refgen/{release}/STAR_INDICES/upload.done',
             bucket=config['bucket'],
             release=[
-                'GCF_002863925.1_EquCab3.0',
+               #'GCF_002863925.1_EquCab3.0',
                 'Equus_caballus.EquCab3.0.103'
             ]
         ),
        # Salmon index
-        expand('{bucket}/public/refgen/{release}/SALMON_INDEX/upload.done',
-            bucket=config['bucket'],
-            release=[
-                'GCF_002863925.1_EquCab3.0',
-                'Equus_caballus.EquCab3.0.103'
-            ]
-        )
+       #expand('{bucket}/public/refgen/{release}/SALMON_INDEX/upload.done',
+       #    bucket=config['bucket'],
+       #    release=[
+       #        'GCF_002863925.1_EquCab3.0',
+       #        'Equus_caballus.EquCab3.0.103'
+       #    ]
+       #)
 
 # ----------------------------------------------------------
 #       Pull ref files from NCBI/ensembl
@@ -81,13 +81,15 @@ rule all:
 
 # this has not been tested BUT was added for the future due to the observed issue
 # commented in rule nice_fasta
-rule pull_refs:
-    input:
-        fna = lambda wildcards: FTP.remote(f'{config[wildcards.release]["fasta"]}'),
-        gff = lambda wildcards: FTP.remote(f'{config[wildcards.release]["gff"]}')
-    output:
-        fna_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.fna.gz'),
-        gff_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.gff.gz')
+#rule pull_refs:
+#    input:
+#        fna = lambda wildcards: FTP.remote(f'{config[wildcards.release]["fasta"]}'),
+#        gff = lambda wildcards: FTP.remote(f'{config[wildcards.release]["gff"]}'),
+#        gtf = lambda wildcards: FTP.remote(f'{config[wildcards.release]["gtf"]}')
+#    output:
+#        fna_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.fna.gz'),
+#        gff_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.gff.gz'),
+#        gtf_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.gtf.gz')
         
 
 # ----------------------------------------------------------
@@ -100,9 +102,11 @@ rule nice_fasta:
         # repeated issues with getting the above to work (invalid distance code,
         # invalid literal/length code, and invalid code lengths set) seems like
         # server side/snakemake issue? downloaded directly instead
-        fna_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.fna.gz'),
+       #fna = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.fna.gz'),
        #fna = "GCF_002863925.1_EquCab3.0_genomic.fna.gz"
+        fna = 'Equus_caballus.EquCab3.0.dna.toplevel.fa.gz'
     output:
+       #S3.remote('{config[wildcards.release]["fasta"]}'),
         fna_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.fna.gz')
     threads: 2
     run:
@@ -127,8 +131,8 @@ rule nice_fasta:
 
 rule nice_gff:
     input:
-       #gff = lambda wildcards: FTP.remote(f'{config[wildcards.release]["gff"]}')
-        gff_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.gff.gz')
+        gff = lambda wildcards: FTP.remote(f'{config[wildcards.release]["gff"]}')
+       #gff = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.gff.gz')
     output:
         gff_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gff.gz')
     threads: 2
@@ -140,6 +144,31 @@ rule nice_gff:
         
         with utils.RawFile(input.gff) as IN, \
             gzip.open(output.gff_nice,'wt') as OUT:
+            for line in IN:
+                id,*fields = line.split('\t')
+                if id in id_map:
+                    id = id_map[id]
+                print(id,*fields,file=OUT,sep='\t',end='')
+
+# ----------------------------------------------------------
+#       Make "nice" GTFs
+# ----------------------------------------------------------
+
+rule nice_gtf:
+    input:
+        gtf = lambda wildcards: FTP.remote(f'{config[wildcards.release]["gtf"]}')
+       #gtf = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.gff.gz')
+    output:
+        gtf_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gtf.gz')
+    threads: 2
+    run:
+        # get convert dict based on release
+        id_map = utils.gen_ensem_id_map()
+        if 'NCBI' in config[wildcards.release]['resource']:
+            id_map = ncbi_id_map
+        
+        with utils.RawFile(input.gtf) as IN, \
+            gzip.open(output.gtf_nice,'wt') as OUT:
             for line in IN:
                 id,*fields = line.split('\t')
                 if id in id_map:
@@ -210,11 +239,16 @@ rule make_transcriptomic_fna:
 # ----------------------------------------------------------
 
 rule build_star:
+    '''
+        Build STAR genome indices using GTF (GFF not needed for this per se)
+    '''
     input:
         fna_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.fna.gz'),
+        gtf_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gtf.gz'),
         gff_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gff.gz')
     output:
         touch('{bucket}/public/refgen/{release}/STAR_INDICES/upload.done'),
+        S3.remote('{bucket}/public/refgen/{release}/STAR_INDICES/Log.out'),
         S3.remote('{bucket}/public/refgen/{release}/STAR_INDICES/Genome'),
         S3.remote('{bucket}/public/refgen/{release}/STAR_INDICES/SA'),
         S3.remote('{bucket}/public/refgen/{release}/STAR_INDICES/SAindex'),
@@ -231,23 +265,24 @@ rule build_star:
         S3.remote('{bucket}/public/refgen/{release}/STAR_INDICES/sjdbList.out.tab'),
         S3.remote('{bucket}/public/refgen/{release}/STAR_INDICES/transcriptInfo.tab'),
         fna_unzip = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.fna'),
-        gff_unzip = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gff')
+        gtf_unzip = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gtf')
     threads: 24
     shell:
         '''
             set -e
 
             gunzip -c {input.fna_nice} > {output.fna_unzip}
-            gunzip -c {input.gff_nice} > {output.gff_unzip}
+            gunzip -c {input.gtf_nice} > {output.gtf_unzip}
 
             STAR \
                 --runThreadN {threads} \
                 --runMode genomeGenerate \
                 --genomeDir {wildcards.bucket}/public/refgen/{wildcards.release}/STAR_INDICES/ \
                 --genomeFastaFiles {output.fna_unzip} \
-                --sjdbGTFfile {output.gff_unzip} \
-                --sjdbGTFtagExonParentTranscript Parent
+                --sjdbGTFfile {output.gtf_unzip}
         '''
+
+# when using GFF had --sjdbGTFtagExonParentTranscript Parent
 
 # ----------------------------------------------------------
 #       Build SALMON indices
@@ -256,30 +291,28 @@ rule build_star:
 rule prepare_hybrid_fasta:
     input:
         fna_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.fna'),
-        gff_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gff'),
+       #gff_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gff'),
+        gtf_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gtf'),
         trx_nice = S3.remote('{bucket}/public/refgen/{release}/{release}_transcriptomic.nice.fna')
     output:
        #touch('{bucket}/public/refgen/{release}/SalmonMetadata/upload.done'),
-        gtf_nice  = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gtf'),
+       #gtf_nice  = S3.remote('{bucket}/public/refgen/{release}/{release}_genomic.nice.gtf'),
         gentrome  = S3.remote('{bucket}/public/refgen/{release}/SalmonMetadata/gentrome.fa'),
         decoy_ids = S3.remote('{bucket}/public/refgen/{release}/SalmonMetadata/decoys.txt')
     threads: 2
     shell:
         '''
-            set -e
-
-            gffread -T {input.gff_nice} \
-                -o {output.gtf_nice}
-
             bash generateDecoyTranscriptome.sh \
                 -j {threads} \
                 -b /home/.conda/bin/bedtools \
                 -m /home/.conda/bin/mashmap \
-                -a {output.gtf_nice} \
+                -a {input.gtf_nice} \
                 -g {input.fna_nice} \
                 -t {input.trx_nice} \
                 -o {wildcards.bucket}/public/refgen/{wildcards.release}/SalmonMetadata/
         '''
+
+# removed gffread -T {input.gff_nice} -o {output.gtf_nice} and used downloaded GTF instead
 
 rule build_salmon_index:
     input:

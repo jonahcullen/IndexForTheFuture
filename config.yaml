@@ -8,9 +8,11 @@ GCF_002863925.1_EquCab3.0 :
     release : GCF_002863925.1_EquCab3.0
     fasta : ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/Equus_caballus/all_assembly_versions/GCF_002863925.1_EquCab3.0/GCF_002863925.1_EquCab3.0_genomic.fna.gz
     gff : ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/Equus_caballus/all_assembly_versions/GCF_002863925.1_EquCab3.0/GCF_002863925.1_EquCab3.0_genomic.gff.gz
+    gtf : ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/Equus_caballus/all_assembly_versions/GCF_002863925.1_EquCab3.0/GCF_002863925.1_EquCab3.0_genomic.gtf.gz
 
 Equus_caballus.EquCab3.0.103 :
     resource : Ensembl
     release : Equus_caballus.EquCab3.0.103
     fasta : ftp://ftp.ensembl.org/pub/release-103/fasta/equus_caballus/dna/Equus_caballus.EquCab3.0.dna.toplevel.fa.gz
     gff : ftp://ftp.ensembl.org/pub/release-103/gff3/equus_caballus/Equus_caballus.EquCab3.0.103.gff3.gz
+    gtf : ftp://ftp.ensembl.org/pub/release-103/gtf/equus_caballus/Equus_caballus.EquCab3.0.103.gtf.gz
